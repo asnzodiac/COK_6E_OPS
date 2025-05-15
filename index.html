@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IndiGo SEC OPS - COK</title>
+  <meta name="theme-color" content="#000000" />
+  <link rel="manifest" href="manifest.json" />
+  <style>
+    :root {
+      --bg-color: #ffffff;
+      --text-color: #000000;
+      --header-bg: #f0f0f0;
+      --table-header-bg: #333333;
+      --table-header-text: #ffffff;
+      --border-color: #cccccc;
+      --control-bg: #ffffff;
+      --control-text: #000000;
+      --delayed-row-bg: #fff0f0;
+      --completed-row-bg: #f0fff0;
+    }
+
+    [data-theme="dark"] {
+      --bg-color: #1a1a1a;
+      --text-color: #ffffff;
+      --header-bg: #2a2a2a;
+      --table-header-bg: #444444;
+      --table-header-text: #ffffff;
+      --border-color: #555555;
+      --control-bg: #333333;
+      --control-text: #ffffff;
+      --delayed-row-bg: #3a2a2a;
+      --completed-row-bg: #2a3a2a;
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      transition: all 0.3s ease;
+    }
+
+    h2 {
+      background: var(--header-bg);
+      padding: 10px;
+    }
+
+    .controls {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 10px;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    select, button {
+      padding: 5px;
+      background-color: var(--control-bg);
+      color: var(--control-text);
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 40px;
+    }
+
+    th, td {
+      border: 1px solid var(--border-color);
+      padding: 8px;
+      text-align: center;
+    }
+
+    th {
+      background-color: var(--table-header-bg);
+      color: var(--table-header-text);
+    }
+
+    .status-green { color: green; font-weight: bold; }
+    .status-orange { color: orange; font-weight: bold; }
+    .status-red { color: red; font-weight: bold; }
+
+    .delayed-row { background-color: var(--delayed-row-bg); }
+    .completed-row { background-color: var(--completed-row-bg); }
+
+    .flight-logo {
+      height: 16px; /* Adjust size as needed */
+      vertical-align: middle;
+      margin-right: 5px;
+    }
+
+    #themeToggle {
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    /* Basic styling for the install button */
+    #installAppButton {
+        background-color: #007bff;
+        color: white;
+        border: none;
+        padding: 8px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+        position: fixed;
+        bottom: 10px;
+        right: 10px;
+        z-index: 1000;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="controls">
+    <button id="themeToggle">Toggle Dark Mode</button>
+        <label>
+      Sort by:
+      <select id="sortOption">
+        <option value="scheduled" selected>STA / STD</option>
+        <option value="estimated">ETA / ETD</option>
+        <option value="delayed">Delayed First</option>
+      </select>
+    </label>
+  </div>
+
+  <h2>Arrivals - IndiGo OPS </h2>
+  <table id="arrivals-table">
+    <thead>
+      <tr>
+        <th>Flight No</th>
+        <th>Registration</th>
+        <th>From</th>
+        <th>ETA</th>
+        <th>STA</th>
+        <th>Aircraft</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td colspan="7">Loading arrivals...</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Departures - IndiGo OPS </h2>
+  <table id="departures-table">
+    <thead>
+      <tr>
+        <th>Flight No</th>
+        <th>Registration</th>
+        <th>To</th>
+        <th>ETD</th>
+        <th>STD</th>
+        <th>Aircraft</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+       <tr><td colspan="7">Loading departures...</td></tr>
+    </tbody>
+  </table>
+
+  <script>
+    const baseUrl = "https://api.flightradar24.com/common/v1/airport.json?code=cok";
+
+    const getEndpoint = (type) => {
+      const timestamp = Math.floor(Date.now() / 1000);
+      // Fetch schedule for roughly the next 24 hours to ensure we have enough data to filter
+      // FlightRadar24 API schedule endpoint typically provides data for a certain period around the timestamp.
+      // Setting the timestamp to 'now' and limit to 100 gives a good range.
+      return `${baseUrl}&plugin-setting[schedule][mode]=${type}&plugin-setting[schedule][timestamp]=${timestamp}&page=1&limit=100`;
+    };
+
+    const toLocalTime = ts =>
+      ts ? new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : "-";
+
+    const classifyStatus = (estimated, scheduled) => {
+      if (!estimated || !scheduled) return "status-green"; // Assume green if no times for comparison
+      const delaySeconds = estimated - scheduled;
+      if (delaySeconds <= 300) return "status-green"; // Up to 5 minutes delay considered green
+      if (delaySeconds <= 900) return "status-orange"; // 5 to 15 minutes delay considered orange
+      return "status-red"; // More than 15 minutes delay considered red
+    };
+
+    // Only include logo for 6E
+    const getLogoURL = (flightNumber) => {
+      const airlineCode = flightNumber.substring(0, 2);
+      if (airlineCode === "6E") {
+          return "https://upload.wikimedia.org/wikipedia/commons/thumb/1/17/IndiGo_logo.svg/1280px-IndiGo_logo.svg.png"; // IndiGo Logo
+      }
+      return ""; // Default to no logo for other airlines
+    };
+
+    const filterAndSortFlights = (flights, type) => {
+      const sortOption = document.getElementById("sortOption").value;
+      const now = Math.floor(Date.now() / 1000);
+      const oneHourInSeconds = 3600;
+      const twentyHoursInSeconds = 20 * 3600; // Still keep a far future limit
+
+      return flights.filter(f => {
+        const fn = f.flight?.identification?.number?.default || "";
+        const airlineCode = fn.substring(0, 2);
+        const est = type === "departures" ? f.flight.time.estimated?.departure : f.flight.time.estimated?.arrival;
+        const sch = type === "departures" ? f.flight.time.scheduled?.departure : f.flight.time.scheduled?.arrival;
+        const act = type === "departures" ? f.flight.time.actual?.departure : f.flight.time.actual?.arrival;
+
+        // --- Modified Airline Filtering Logic - ONLY 6E ---
+        const airlineMatch = fn.startsWith("6E");
+
+        if (!airlineMatch) return false; // Exclude if airline is not 6E
+
+        // --- Revised Time-Based Filtering Logic ---
+        // Include the flight if:
+        // 1. It is a 6E flight (already checked above).
+        // 2. AND (
+        //    a. Its Actual time (act) is available AND is within the last 1 hour (act > now - oneHourInSeconds)
+        //    OR
+        //    b. Its Actual time (act) is NOT available (meaning it hasn't completed yet according to the API data)
+        // )
+        // Additionally, apply a limit to future flights based on SCH/EST to avoid showing data too far out.
+
+        const isCompletedRecently = act && (act > now - oneHourInSeconds);
+        const isNotCompleted = !act;
+
+        // Limit flights too far in the future based primarily on Scheduled time if available,
+        // otherwise based on Estimated time.
+        // Only apply this future limit to flights that are *not* yet completed.
+        const futureTime = sch || est; // Use SCH or EST for future limit check
+        // If the flight is not completed, check if its future time (SCH or EST) is within the window.
+        // If the flight *is* completed (and completed recently), the future window check is irrelevant, so we pass true.
+        const isWithinFutureWindow = isNotCompleted ? (futureTime ? futureTime <= now + twentyHoursInSeconds : true) : true;
+
+
+        // The flight is included if it is 6E AND (it completed recently OR it hasn't completed yet) AND (if not completed, it's within the future window).
+        return airlineMatch && (isCompletedRecently || isNotCompleted) && isWithinFutureWindow;
+
+      }).sort((a, b) => {
+        const now = Math.floor(Date.now() / 1000);
+
+        // Helper to get the time values we need for sorting
+        const getTimeValues = (f) => {
+          const isDep = type === "departures";
+          const est = isDep ? f.flight.time.estimated?.departure : f.flight.time.estimated?.arrival;
+          const sch = isDep ? f.flight.time.scheduled?.departure : f.flight.time.scheduled?.arrival;
+          const act = isDep ? f.flight.time.actual?.departure : f.flight.time.actual?.arrival;
+
+          // Define 'isDelayedSort' for sorting purposes: SCH in the past, and ACT/EST is significantly later or not yet occurred
+          // Consider delayed for sorting if its SCH is in the past AND (ACT is null OR ACT is more than 5 minutes after SCH OR EST is more than 5 minutes after SCH)
+          const isDelayedSort = sch && now > sch && (!act || (act && act > sch + 300)) && (!est || (est && est > sch + 300)); // Delayed if SCH passed and ACT/EST isn't near SCH (+5 mins buffer)
+
+          // Use the most relevant time for time-based sorting
+          // For sorting, prioritize ACT (if completed recently), then EST, then SCH.
+          // If sorting by scheduled or estimated, use that specific time first, then fallbacks.
+          let sortTime;
+          if (sortOption === "scheduled") {
+              sortTime = sch || est || act || 0;
+          } else if (sortOption === "estimated") {
+              sortTime = est || sch || act || 0;
+          } else { // delayed sort or fallback
+              sortTime = act || est || sch || 0; // Use ACT for completed, then EST, then SCH
+          }
+
+
+          return { est, sch, act, isDelayedSort, sortTime };
+        };
+
+        const aTime = getTimeValues(a);
+        const bTime = getTimeValues(b);
+
+        // If sorting by "delayed first"
+        if (sortOption === "delayed") {
+          // Prioritize delayed flights
+          if (aTime.isDelayedSort && !bTime.isDelayedSort) return -1;
+          if (!aTime.isDelayedSort && bTime.isDelayedSort) return 1;
+
+          // Among delayed or non-delayed flights, sort by their relevant time (ACT, EST, or SCH)
+          return aTime.sortTime - bTime.sortTime;
+        }
+        // Sort by estimated time (defaulting to scheduled if est is missing, then actual)
+        else if (sortOption === "estimated") {
+          return aTime.sortTime - bTime.sortTime;
+        }
+        // Sort by scheduled time (defaulting to estimated if sch is missing, then actual)
+        else { // sortOption === "scheduled"
+          return aTime.sortTime - bTime.sortTime;
+        }
+      });
+    };
+
+    const loadFlights = async (type) => {
+      try {
+        const res = await fetch(getEndpoint(type));
+        const data = await res.json();
+        // Added check for data structure
+        if (!data?.result?.response?.airport?.pluginData?.schedule?.[type]?.data) {
+             console.warn(`No ${type} data found in API response.`);
+             document.querySelector(`#${type}-table tbody`).innerHTML = `<tr><td colspan="7">No ${type} data available.</td></tr>`;
+             return;
+        }
+        const flights = data.result.response.airport.pluginData.schedule[type].data;
+        const tbody = document.querySelector(`#${type}-table tbody`);
+        tbody.innerHTML = ""; // Clear existing rows
+
+        const filteredFlights = filterAndSortFlights(flights, type);
+        const now = Math.floor(Date.now() / 1000);
+
+        if (filteredFlights.length === 0) {
+             tbody.innerHTML = `<tr><td colspan="7">No matching ${type} found for 6E.</td></tr>`;
+             return;
+        }
+
+        filteredFlights.forEach(f => {
+          const fl = f.flight;
+          const isDep = type === "departures";
+          const est = isDep ? fl.time.estimated?.departure : fl.time.estimated?.arrival;
+          const sch = isDep ? fl.time.scheduled?.departure : fl.time.scheduled?.arrival;
+          const act = isDep ? fl.time.actual?.departure : fl.time.actual?.arrival;
+          const fn = fl.identification.number?.default || "-";
+          const logo = getLogoURL(fn); // Get logo based on the filtered list
+          const reg = fl.aircraft?.registration || "-";
+
+          // --- Display Airport Code (3-letter IATA) ---
+          const airportOriginCode = fl.airport.origin?.code?.iata || "-";
+          const airportDestinationCode = fl.airport.destination?.code?.iata || "-";
+
+          const model = fl.aircraft?.model?.text || "-";
+          const status = fl.status?.text || "-";
+
+          // --- Revised Row Class Logic ---
+          const isCompleted = act && act <= now;
+          // Visually delayed if not completed AND (estimated > scheduled + 15min OR scheduled passed with no est/act update)
+          const isDelayedVisual = !isCompleted && ((est && sch && est > sch + 900) || (!est && !act && sch && sch < now));
+
+          const row = document.createElement("tr");
+          if (isDelayedVisual) {
+            row.classList.add("delayed-row");
+          } else if (isCompleted) {
+            row.classList.add("completed-row");
+          }
+
+          row.innerHTML = `
+            <td>${logo ? `<img class="flight-logo" src="${logo}" alt="logo">` : ''} ${fn}</td>
+            <td>${reg}</td>
+            <td>${type === "arrivals" ? airportOriginCode : airportDestinationCode}</td>
+            <td>${toLocalTime(est)}</td>
+            <td>${toLocalTime(sch)}</td>
+            <td>${model}</td>
+            <td class="${classifyStatus(est, sch)}">${status}</td>
+          `;
+          tbody.appendChild(row);
+        });
+      } catch (err) {
+        console.error(`Error loading ${type}:`, err);
+        // Display error message in table
+        document.querySelector(`#${type}-table tbody`).innerHTML = `<tr><td colspan="7">Error loading flight data. Please try again later.</td></tr>`;
+      }
+    };
+
+    const refreshAllFlights = () => {
+      loadFlights("arrivals");
+      loadFlights("departures");
+    };
+
+    const themeToggle = document.getElementById("themeToggle");
+    const setTheme = (theme) => {
+      document.documentElement.setAttribute("data-theme", theme);
+      themeToggle.textContent = theme === "dark" ? "Toggle Light Mode" : "Toggle Dark Mode";
+      localStorage.setItem("theme", theme);
+    };
+
+    const initializeTheme = () => {
+      const savedTheme = localStorage.getItem("theme") || "light";
+      setTheme(savedTheme);
+    };
+
+    themeToggle.addEventListener("click", () => {
+      const currentTheme = document.documentElement.getAttribute("data-theme") || "light";
+      setTheme(currentTheme === "dark" ? "light" : "dark");
+    });
+
+    // Removed event listener for airlineFilter as the dropdown is removed
+    document.getElementById("sortOption").addEventListener("change", refreshAllFlights);
+
+    // Initial load and set interval
+    initializeTheme();
+    refreshAllFlights();
+    setInterval(refreshAllFlights, 30000); // Refresh every 30 seconds
+
+    // PWA Service Worker and Install Prompt
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./service-worker.js')
+          .then(reg => console.log("SW registered", reg))
+          .catch(err => console.error("SW registration failed:", err));
+      });
+    }
+
+    let deferredPrompt;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      // You might want to show a custom install button in your UI instead of adding directly to body
+      // For now, adding a simple button for demonstration
+      const installBtn = document.createElement("button");
+      installBtn.textContent = "Install App";
+      installBtn.id = "installAppButton"; // Added ID for potential styling
+      // Check if the button already exists to prevent duplicates on repeated beforeinstallprompt events
+      if (!document.getElementById("installAppButton")) {
+          document.body.appendChild(installBtn);
+      }
+
+
+      installBtn.onclick = () => {
+        installBtn.remove();
+        deferredPrompt.prompt();
+        deferredPrompt.userChoice.then(choice => {
+          if (choice.outcome === 'accepted') {
+            console.log("App installed");
+          } else {
+            console.log("App installation dismissed");
+          }
+          deferredPrompt = null;
+        });
+      };
+    });
+
+     // Optional: Remove install button if the app is already installed
+     window.addEventListener('appinstalled', () => {
+        console.log('PWA installed successfully');
+        const installBtn = document.getElementById("installAppButton");
+        if (installBtn) {
+            installBtn.remove();
+        }
+        deferredPrompt = null;
+     });
+  </script>
+
+  </body>
+</html>
