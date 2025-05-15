@@ -8,12 +8,12 @@
   "orientation": "portrait",
   "icons": [
     {
-      "src": "icon-192.png",
+      "src": "https://cdn.brandfetch.io/idgxZfGN5H/theme/dark/logo.svg?c=1dxbfHSJFAPEGdCLU4o5B",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "icon-512.png",
+      "src": "https://cdn.brandfetch.io/idgxZfGN5H/theme/dark/logo.svg?c=1dxbfHSJFAPEGdCLU4o5B",
       "sizes": "512x512",
       "type": "image/png"
     }
