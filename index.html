@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+
+
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>AIX SEC OPS - Aswin COK</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#000000" />
+<style>
+:root {
+  --bg-color: #ffffff;
+  --text-color: #000000;
+  --header-bg: #f0f0f0;
+  --table-header-bg: #333333;
+  --table-header-text: #ffffff;
+  --border-color: #cccccc;
+  --control-bg: #ffffff;
+  --control-text: #000000;
+  --subheader-bg: #ddd;
+  --subheader-text: #000;
+  --tab-active: #222;
+  --tab-active-text: #fff;
+  --tab-inactive: #e6e6e6;
+  --tab-inactive-text: #000;
+}
+[data-theme="dark"] {
+  --bg-color: #1a1a1a;
+  --text-color: #ffffff;
+  --header-bg: #2a2a2a;
+  --table-header-bg: #444444;
+  --table-header-text: #ffffff;
+  --border-color: #555555;
+  --control-bg: #333333;
+  --control-text: #ffffff;
+  --subheader-bg: #222;
+  --subheader-text: #fff;
+  --tab-active: #000;
+  --tab-active-text: #fff;
+  --tab-inactive: #333;
+  --tab-inactive-text: #ccc;
+}
+body {
+  font-family: Arial, sans-serif;
+  margin: 20px;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  transition: background 0.3s, color 0.3s;
+}
+h2 {
+  background: var(--header-bg);
+  padding: 10px;
+  color: var(--text-color);
+  margin-top: 20px;
+}
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+select, button, input {
+  padding: 5px;
+  background-color: var(--control-bg);
+  color: var(--control-text);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 40px;
+}
+th, td {
+  border: 1px solid var(--border-color);
+  padding: 8px;
+  text-align: center;
+}
+th {
+  background-color: var(--table-header-bg);
+  color: var(--table-header-text);
+}
+.subheader-row {
+  background: var(--subheader-bg);
+  color: var(--subheader-text);
+  font-weight: bold;
+  text-align: left;
+  transition: background 0.3s, color 0.3s;
+}
+.status-green { color: green; font-weight: bold;}
+.status-orange { color: orange; font-weight: bold;}
+.status-red { color: red; font-weight: bold;}
+.flight-logo {
+  height: 16px;
+  vertical-align: middle;
+  margin-right: 5px;
+}
+.loading { text-align: center; padding: 10px; font-style: italic; }
+.error { text-align: center; color: red; padding: 10px; }
+.pinned-row {
+  background: #ffeeb8; /* light gold */
+  font-weight: bold;
+  position: relative;
+}
+[data-theme="dark"] .pinned-row {
+  background: #444000; /* dark gold */
+  color: #fff;
+}
+.pin-remove-btn {
+  margin-left: 6px;
+  font-size: 12px;
+  padding: 2px 7px;
+  cursor: pointer;
+  color: #888;
+  background: #eee;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+[data-theme="dark"] .pin-remove-btn {
+  background: #555;
+  color: #ccc;
+  border: 1px solid #888;
+}
+/* Tabs */
+.tabs {
+display: flex;
+gap: 6px;
+margin-bottom: 12px;
+}
+.tab-btn {
+padding: 8px 12px;
+border-radius: 6px;
+cursor: pointer;
+border: 1px solid var(–border-color);
+background: var(–tab-inactive);
+color: var(–tab-inactive-text);
+font-weight: bold;
+}
+.tab-btn.active {
+background: var(–tab-active);
+color: var(–tab-active-text);
+}
+.section {
+display: none;
+}
+.section.active {
+display: block;
+}
+/* Turnaround table */
+.turnaround-note {
+font-size: 12px;
+color: #888;
+margin: 6px 0 12px;
+}
+</style>
+
+
+</head>
+<body>
+
+
+<!-- Tabs -->
+
+
+<div class="tabs">
+  <button id="tab-turnaround" class="tab-btn active">Turn around</button>
+  <button id="tab-arrivals" class="tab-btn">Arrivals</button>
+  <button id="tab-departures" class="tab-btn">Departures</button>
+</div>
+
+
+<!-- Global Controls -->
+
+
+<div class="controls">
+  <input id="flightSearchInput" type="text" placeholder="Search flight number…">
+  <button id="flightSearchBtn">Search & Pin</button>
+  <span id="flightSearchStatus"></span>
+</div>
+
+
+<div class="controls">
+  <button id="themeToggle">Toggle Dark Mode</button>
+  <label>Airline Filter:
+    <select id="airlineFilter">
+      <option value="IX">AIX Only</option>
+      <option value="IXAI">AIX + AI</option>
+      <option value="IXOAL" selected>AIX + OAL</option>
+    </select>
+  </label>
+  <label>Sort by:
+    <select id="sortOption">
+      <option value="scheduled" selected>STA / STD</option>
+      <option value="estimated">ETA / ETD</option>
+    </select>
+  </label>
+</div>
+
+
+<!-- Turnaround Section -->
+
+
+<div id="section-turnaround" class="section active">
+  <h2>Turn around - AIX Security-COK</h2>
+  <div class="turnaround-note">
+    Pairs arrivals and departures by aircraft registration within 2 hours. Shows arrival/departure numbers and STA/STD. Only future movements are listed based on filter and sort settings. [Def: turnaround time concept][4][5][7]
+  </div>
+  <table id="turnaround-table">
+    <thead>
+      <tr>
+        <th>Registration</th>
+        <th>Arrival Flight</th>
+        <th>STA</th>
+        <th>Departure Flight</th>
+        <th>STD</th>
+        <th>Ground Time</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+
+<!-- Arrivals Section -->
+
+
+<div id="section-arrivals" class="section">
+  <h2>Arrivals - AIX Security-COK</h2>
+  <table id="arrivals-table">
+    <thead>
+      <tr>
+        <th>Flight No</th>
+        <th>Registration</th>
+        <th>From</th>
+        <th>ETA</th>
+        <th>STA</th>
+        <th>Aircraft</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+
+<!-- Departures Section -->
+
+
+<div id="section-departures" class="section">
+  <h2>Departures - AIX Security-COK</h2>
+  <table id="departures-table">
+    <thead>
+      <tr>
+        <th>Flight No</th>
+        <th>Registration</th>
+        <th>To</th>
+        <th>ETD</th>
+        <th>STD</th>
+        <th>Aircraft</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+
+<script>
+const baseUrl = "https://api.flightradar24.com/common/v1/airport.json?code=cok"; // FR24 airport endpoint used for schedules[8][9][10]
+const AIRASIA_LOGO_768 = "https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/AirAsia_New_Logo_%282020%29.svg/768px-AirAsia_New_Logo_%282020%29.svg.png"; // Requested logo[2][3][1]
+
+const airlineLogos = {
+  IX: "https://cdn.brandfetch.io/idM6IAvrlf/w/820/h/248/theme/dark/logo.png",
+  AI: "https://cdn.brandfetch.io/id-PSmaCm4/w/800/h/284/theme/light/logo.png",
+  UL: "https://cdn.brandfetch.io/idZQkqhbVi/w/800/h/578/theme/dark/symbol.png",
+  AK: AIRASIA_LOGO_768, // Updated per request[3][1][2]
+  FD: AIRASIA_LOGO_768, // Updated per request[1][2][3]
+  FZ: "https://cdn.brandfetch.io/idzRsGDSFE/w/800/h/162/theme/dark/logo.png",
+  J9: "https://cdn.brandfetch.io/idRWbgTyu0/w/800/h/248/theme/dark/logo.png"
+};
+
+const getEndpoint = type => {
+  const ts = Math.floor(Date.now()/1000);
+  return `${baseUrl}&plugin-setting[schedule][mode]=${type}&plugin-setting[schedule][timestamp]=${ts}&page=1&limit=100`;
+};
+const getLogoURL = fn => airlineLogos[(fn||"").substring(0,2)] || "";
+const toLocalTime = ts => ts ? new Date(ts*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false}) : "-";
+const toLocalDateTime = ts => ts ? new Date(ts*1000).toLocaleString([], {hour:'2-digit',minute:'2-digit',hour12:false, day:'2-digit', month:'short'}) : "-";
+const classifyStatus = (est,sch) => {
+  if(!est||!sch) return "status-green";
+  const delay = est-sch;
+  if(delay<=0) return "status-green"; 
+  if(delay<=900) return "status-orange";
+  return "status-red";
+};
+const twoHours = 2*60*60;
+
+const filterAndSortFlights = (flights,type)=>{
+  const filter = document.getElementById("airlineFilter").value;
+  const sort = document.getElementById("sortOption").value;
+  const now = Math.floor(Date.now()/1000);
+  return flights.filter(f=>{
+    const fn=f.flight?.identification?.number?.default||"";
+    const code=fn.substring(0,2);
+    const est= type==="departures"?f.flight.time.estimated?.departure:f.flight.time.estimated?.arrival;
+    const sch= type==="departures"?f.flight.time.scheduled?.departure:f.flight.time.scheduled?.arrival;
+    const latest=est||sch;
+    if(latest<now) return false;
+    if(filter==="IX") return fn.startsWith("IX");
+    if(filter==="IXAI") return fn.startsWith("IX")||fn.startsWith("AI");
+    return fn.startsWith("IX")||["AK","FD","UL","FZ","J9"].includes(code);
+  }).sort((a,b)=>{
+    const time=f=>{
+      return sort==="estimated"?
+        (type==="departures"?f.flight.time.estimated?.departure:f.flight.time.estimated?.arrival)||0:
+        (type==="departures"?f.flight.time.scheduled?.departure:f.flight.time.scheduled?.arrival)||0;
+    };
+    return time(a)-time(b);
+  });
+};
+
+const groupFlightsByDay=(flights,type)=>{
+  const today=new Date(); today.setHours(0,0,0,0);
+  const tomorrow=new Date(today); tomorrow.setDate(today.getDate()+1);
+  const todayFlights=[],tomorrowFlights=[];
+  flights.forEach(f=>{
+    const sch=type==="departures"?f.flight.time.scheduled?.departure:f.flight.time.scheduled?.arrival;
+    if(!sch) return;
+    const date=new Date(sch*1000);
+    if(date>=tomorrow) tomorrowFlights.push(f); else todayFlights.push(f);
+  });
+  return{todayFlights,tomorrowFlights};
+};
+
+const formatDateLabel=(date,label)=>{
+  const day=String(date.getDate()).padStart(2,'0');
+  const month=date.toLocaleString('en-US',{month:'short'}); 
+  const year=date.getFullYear();
+  return `${label} – ${day} ${month} ${year}`;
+};
+
+// ----- Pin system -----
+let pinnedFlights = {arrivals:[], departures:[]}, cachedArrivals=[], cachedDepartures=[];
+function getFlightId(flightObj){
+  const fn=(flightObj.flight?.identification?.number?.default||"").toUpperCase();
+  const sch=flightObj.flight.time.scheduled;
+  const t = sch?.departure || sch?.arrival || "";
+  return t ? `${fn}_${t}` : fn;
+}
+function renderPinnedFlights(tbody,list,type){
+  if(!list.length) return;
+  list.forEach((flightObj,idx)=>{
+    const fl=flightObj.flight;
+    const isDep=type==="departures";
+    const est=isDep?fl.time.estimated?.departure:fl.time.estimated?.arrival;
+    const sch=isDep?fl.time.scheduled?.departure:fl.time.scheduled?.arrival;
+    const fn=fl.identification.number?.default||"-";
+    const logo=getLogoURL(fn);
+    const reg=fl.aircraft?.registration||"-";
+    const code=isDep?fl.airport.destination?.code?.iata:fl.airport.origin?.code?.iata||"-";
+    const model=fl.aircraft?.model?.text||"-";
+    const status=fl.status?.text||"-";
+    const flightId = getFlightId(flightObj);
+    const row=document.createElement("tr");
+    row.className="pinned-row";
+    row.innerHTML=`
+      <td>
+        ${logo?`<img class="flight-logo" src="${logo}" alt="${fn.substring(0,2)}" onerror="this.style.display='none'">`:""} 
+        ${fn} <span style="color:#c90;">(Pinned)</span>
+        <button class="pin-remove-btn" data-id="${flightId}" data-type="${type}">Remove</button>
+      </td>
+      <td>${reg}</td>
+      <td>${code}</td>
+      <td>${toLocalTime(est)}</td>
+      <td>${toLocalTime(sch)}</td>
+      <td>${model}</td>
+      <td class="${classifyStatus(est,sch)}">${status}</td>
+    `;
+    tbody.appendChild(row);
+  });
+}
+function addPinnedFlight(flightObj,type){
+  const id = getFlightId(flightObj);
+  if (!pinnedFlights[type].some(f=>getFlightId(f)===id)) {
+    pinnedFlights[type].push(flightObj);
+  }
+}
+function removePinnedFlight(flightId,type){
+  pinnedFlights[type]=pinnedFlights[type].filter(f=>getFlightId(f)!==flightId);
+}
+// ----- -----
+
+const renderGroup=(tbody,group,label,type)=>{
+  if(!group.length) return;
+  const header=document.createElement("tr");
+  header.className="subheader-row";
+  header.innerHTML=`<td colspan="7">${label}</td>`;
+  tbody.appendChild(header);
+  group.forEach(f=>{
+    const fl=f.flight;
+    const isDep=type==="departures";
+    const est=isDep?fl.time.estimated?.departure:fl.time.estimated?.arrival;
+    const sch=isDep?fl.time.scheduled?.departure:fl.time.scheduled?.arrival;
+    const fn=fl.identification.number?.default||"-";
+    const logo=getLogoURL(fn);
+    const reg=fl.aircraft?.registration||"-";
+    const code=isDep?fl.airport.destination?.code?.iata:fl.airport.origin?.code?.iata||"-";
+    const model=fl.aircraft?.model?.text||"-";
+    const status=fl.status?.text||"-";
+    const row=document.createElement("tr");
+    row.innerHTML=`
+      <td>${logo?`<img class="flight-logo" src="${logo}" alt="${fn.substring(0,2)}" onerror="this.style.display='none'">`:""} ${fn}</td>
+      <td>${reg}</td>
+      <td>${code}</td>
+      <td>${toLocalTime(est)}</td>
+      <td>${toLocalTime(sch)}</td>
+      <td>${model}</td>
+      <td class="${classifyStatus(est,sch)}">${status}</td>
+    `;
+    tbody.appendChild(row);
+  });
+};
+
+const loadFlights=async(type)=>{
+  const tbody=document.querySelector(`#${type}-table tbody`);
+  tbody.innerHTML=`<tr><td colspan="7" class="loading">Loading...</td></tr>`;
+  try{
+    const res=await fetch(getEndpoint(type));
+    const data=await res.json();
+    const flights=data.result.response.airport.pluginData.schedule[type].data;
+    if(type==="arrivals") cachedArrivals=flights;
+    if(type==="departures") cachedDepartures=flights;
+    tbody.innerHTML="";
+    renderPinnedFlights(tbody,pinnedFlights[type],type);
+    const filtered=filterAndSortFlights(flights,type);
+    const today=new Date(); today.setHours(0,0,0,0);
+    const tomorrow=new Date(today); tomorrow.setDate(today.getDate()+1);
+    const {todayFlights,tomorrowFlights}=groupFlightsByDay(filtered,type);
+    renderGroup(tbody,todayFlights,formatDateLabel(today,"Today"),type);
+    renderGroup(tbody,tomorrowFlights,formatDateLabel(tomorrow,"Tomorrow"),type);
+    // Attach Remove event for pin buttons
+    Array.from(tbody.querySelectorAll(".pin-remove-btn")).forEach(btn=>{
+      btn.onclick = function(){
+        removePinnedFlight(btn.getAttribute("data-id"), btn.getAttribute("data-type"));
+        loadFlights(btn.getAttribute("data-type"));
+      };
+    });
+  }catch(e){
+    console.error(e);
+    tbody.innerHTML=`<tr><td colspan="7" class="error">Error loading flights</td></tr>`;
+  }
+};
+
+/* Turnaround pairing:
+   - Build maps by registration for future arrivals and departures.
+   - For each arrival, find the nearest future departure with same reg where 0 < (STD - STA) <= 2h.
+   - Use scheduled times primarily for STA/STD view (as requested).
+   - Respect current airline filter and time sort for which flights are in scope.[5][7][4]
+*/
+function computeTurnarounds() {
+  const filter = document.getElementById("airlineFilter").value;
+  const sort = document.getElementById("sortOption").value;
+
+  const arrFiltered = filterAndSortFlights(cachedArrivals, "arrivals");
+  const depFiltered = filterAndSortFlights(cachedDepartures, "departures");
+
+  const depByReg = new Map();
+  depFiltered.forEach(d=>{
+    const reg = d.flight?.aircraft?.registration;
+    const std = d.flight?.time?.scheduled?.departure || 0;
+    if(!reg || !std) return;
+    if(!depByReg.has(reg)) depByReg.set(reg, []);
+    depByReg.get(reg).push(d);
+  });
+  // sort each reg departures by STD
+  depByReg.forEach(list=>{
+    list.sort((a,b)=>(a.flight.time.scheduled?.departure||0)-(b.flight.time.scheduled?.departure||0));
+  });
+
+  const pairs = [];
+  const usedDepartureIds = new Set();
+
+  arrFiltered.forEach(a=>{
+    const reg = a.flight?.aircraft?.registration;
+    const sta = a.flight?.time?.scheduled?.arrival || 0;
+    if(!reg || !sta) return;
+    const depList = depByReg.get(reg) || [];
+    // find the first departure with STD within 2h after STA and not used
+    let chosen = null;
+    for(const d of depList){
+      const std = d.flight?.time?.scheduled?.departure || 0;
+      const did = getFlightId(d);
+      if(std > sta && (std - sta) <= twoHours && !usedDepartureIds.has(did)){
+        chosen = d;
+        break;
+      }
+    }
+    if(chosen){
+      const did = getFlightId(chosen);
+      usedDepartureIds.add(did);
+      pairs.push({arrival:a, departure:chosen});
+    }
+  });
+
+  // Optional: sort pairs by arrival STA or by selected sort (estimated/scheduled)
+  if (document.getElementById("sortOption").value === "estimated") {
+    pairs.sort((x,y)=>{
+      const xa = x.arrival.flight.time.estimated?.arrival || x.arrival.flight.time.scheduled?.arrival || 0;
+      const ya = y.arrival.flight.time.estimated?.arrival || y.arrival.flight.time.scheduled?.arrival || 0;
+      return xa - ya;
+    });
+  } else {
+    pairs.sort((x,y)=>{
+      const xa = x.arrival.flight.time.scheduled?.arrival || 0;
+      const ya = y.arrival.flight.time.scheduled?.arrival || 0;
+      return xa - ya;
+    });
+  }
+  return pairs;
+}
+
+function renderTurnaround() {
+  const tbody = document.querySelector("#turnaround-table tbody");
+  tbody.innerHTML = `<tr><td colspan="6" class="loading">Loading...</td></tr>`;
+  try {
+    const pairs = computeTurnarounds();
+    tbody.innerHTML = "";
+    if (!pairs.length) {
+      tbody.innerHTML = `<tr><td colspan="6" class="loading">No qualifying 2-hour turnarounds found.</td></tr>`;
+      return;
+    }
+    pairs.forEach(p=>{
+      const af = p.arrival.flight;
+      const df = p.departure.flight;
+      const reg = af.aircraft?.registration || df.aircraft?.registration || "-";
+      const arrFn = af.identification?.number?.default || "-";
+      const depFn = df.identification?.number?.default || "-";
+      const sta = af.time?.scheduled?.arrival || 0;
+      const std = df.time?.scheduled?.departure || 0;
+      const groundSec = Math.max(0, std - sta);
+      const groundMin = Math.round(groundSec/60);
+      const row = document.createElement("tr");
+      row.innerHTML = `
+        <td>${reg}</td>
+        <td>${arrFn}</td>
+        <td>${toLocalDateTime(sta)}</td>
+        <td>${depFn}</td>
+        <td>${toLocalDateTime(std)}</td>
+        <td>${groundMin} min</td>
+      `;
+      tbody.appendChild(row);
+    });
+  } catch(e){
+    console.error(e);
+    tbody.innerHTML = `<tr><td colspan="6" class="error">Error building turnaround list</td></tr>`;
+  }
+}
+
+let filterTimeout;
+function refreshWithDelay(){
+  clearTimeout(filterTimeout);
+  filterTimeout=setTimeout(refreshAllFlights,300);
+}
+async function refreshAllFlights(){
+  await Promise.all([loadFlights("arrivals"), loadFlights("departures")]);
+  renderTurnaround();
+}
+
+// Theme
+const setTheme=theme=>{
+  document.documentElement.setAttribute("data-theme",theme);
+  document.getElementById("themeToggle").textContent=theme==="dark"?"Toggle Light Mode":"Toggle Dark Mode";
+  localStorage.setItem("theme",theme);
+};
+(function(){
+  const saved=localStorage.getItem("theme");
+  const prefersDark=window.matchMedia('(prefers-color-scheme: dark)').matches;
+  setTheme(saved || (prefersDark?"dark":"light"));
+})();
+document.getElementById("themeToggle").addEventListener("click",()=>{
+  const current=document.documentElement.getAttribute("data-theme")||"light";
+  setTheme(current==="dark"?"light":"dark");
+  refreshAllFlights();
+});
+
+// Filters
+document.getElementById("airlineFilter").addEventListener("change",refreshWithDelay);
+document.getElementById("sortOption").addEventListener("change",refreshWithDelay);
+
+// Search & Pin
+document.getElementById("flightSearchBtn").addEventListener("click",()=>{
+  const search=document.getElementById("flightSearchInput").value.trim().toUpperCase();
+  const status=document.getElementById("flightSearchStatus");
+  status.textContent="";
+  if(!search){status.textContent="Enter a valid flight number.";return;}
+  let found=[...cachedArrivals,...cachedDepartures].find(f=>(f.flight?.identification?.number?.default||"").toUpperCase()===search);
+  if(found){
+    const type=cachedArrivals.includes(found)?"arrivals":"departures";
+    addPinnedFlight(found,type);
+    loadFlights(type);
+    status.textContent=`Pinned ${search} in ${type}`;
+  }else{
+    status.textContent="Flight not found in current schedule.";
+  }
+});
+
+// Tabs logic
+function setActiveTab(tabId){
+  const tabs = ["turnaround","arrivals","departures"];
+  tabs.forEach(t=>{
+    document.getElementById(`tab-${t}`).classList.toggle("active", t===tabId);
+    document.getElementById(`section-${t}`).classList.toggle("active", t===tabId);
+  });
+}
+document.getElementById("tab-turnaround").addEventListener("click",()=>setActiveTab("turnaround"));
+document.getElementById("tab-arrivals").addEventListener("click",()=>setActiveTab("arrivals"));
+document.getElementById("tab-departures").addEventListener("click",()=>setActiveTab("departures"));
+
+// Init
+refreshAllFlights();
+setInterval(refreshAllFlights,30000);
+</script>
+
+
+</body>
+</html>
